@@ -65,7 +65,7 @@ class ScriptModal(discord.ui.Modal, title="Paste Your Script"):
         script_key = match.group(1)
         url = match.group(2)
 
-        # EXACT FORMAT (no extra spaces, no extra lines)
+        # EXACT format
         fixed_script = (
             f'script_key="{script_key}";\n'
             f'loadstring(game:HttpGet("{url}"))()'
@@ -80,11 +80,9 @@ class ScriptModal(discord.ui.Modal, title="Paste Your Script"):
         })
         save_logs(logs)
 
-        # DM the fixed script
+        # DM the fixed script AS RAW TEXT (no code block)
         try:
-            await interaction.user.send(
-                f"```lua\n{fixed_script}\n```"
-            )
+            await interaction.user.send(f"{fixed_script}")
             await interaction.response.send_message(
                 "📩 Script fixed! Check your DMs.",
                 ephemeral=True
@@ -150,7 +148,7 @@ async def setbg(interaction: discord.Interaction, image: discord.Attachment):
         await interaction.response.send_message("❌ Admins only.", ephemeral=True)
         return
 
-    if not image.content_type.startswith("image/"):
+    if not image.content_type or not image.content_type.startswith("image/"):
         await interaction.response.send_message("❌ File must be an image.", ephemeral=True)
         return
 
