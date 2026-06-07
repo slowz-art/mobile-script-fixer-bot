@@ -7,21 +7,8 @@ from discord import app_commands
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-# -----------------------------
-# CONFIG + LOG STORAGE
-# -----------------------------
-CONFIG_FILE = "config.json"
+BACKGROUND_FILE = "background.png"
 LOG_FILE = "logs.json"
-
-def load_config():
-    if not os.path.exists(CONFIG_FILE):
-        return {"background": None}
-    with open(CONFIG_FILE, "r") as f:
-        return json.load(f)
-
-def save_config(cfg):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(cfg, f, indent=4)
 
 def load_logs():
     if not os.path.exists(LOG_FILE):
@@ -33,19 +20,14 @@ def save_logs(logs):
     with open(LOG_FILE, "w") as f:
         json.dump(logs, f, indent=4)
 
-config = load_config()
 logs = load_logs()
 
-# -----------------------------
-# BOT SETUP
-# -----------------------------
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Regex to extract script_key + URL
 SCRIPT_REGEX = re.compile(
     r'script_key\s*=\s*"([^"]+)"\s*;?\s*[\r\n ]*loadstring\s*\(\s*game:HttpGet\("([^"]+)"\)\s*\)\s*\(\s*\)',
     re.IGNORECASE
@@ -58,7 +40,7 @@ def clean_input(text: str) -> str:
     return text.strip()
 
 # -----------------------------
-# MODAL FOR SCRIPT INPUT
+# Modal for Script Input
 # -----------------------------
 class ScriptModal(discord.ui.Modal, title="Paste Your Script"):
     script = discord.ui.TextInput(
@@ -83,12 +65,13 @@ class ScriptModal(discord.ui.Modal, title="Paste Your Script"):
         script_key = match.group(1)
         url = match.group(2)
 
+        # EXACT FORMAT (no extra spaces, no extra lines)
         fixed_script = (
             f'script_key="{script_key}";\n'
             f'loadstring(game:HttpGet("{url}"))()'
         )
 
-        # Log the event
+        # Log safe metadata only
         logs.append({
             "user": interaction.user.id,
             "username": str(interaction.user),
@@ -97,10 +80,10 @@ class ScriptModal(discord.ui.Modal, title="Paste Your Script"):
         })
         save_logs(logs)
 
-        # DM the user
+        # DM the fixed script
         try:
             await interaction.user.send(
-                f"✅ Your fixed script:\n```lua\n{fixed_script}\n```"
+                f"```lua\n{fixed_script}\n```"
             )
             await interaction.response.send_message(
                 "📩 Script fixed! Check your DMs.",
@@ -113,7 +96,7 @@ class ScriptModal(discord.ui.Modal, title="Paste Your Script"):
             )
 
 # -----------------------------
-# PANEL BUTTON
+# Panel Button
 # -----------------------------
 class FixerPanel(discord.ui.View):
     def __init__(self):
@@ -124,37 +107,62 @@ class FixerPanel(discord.ui.View):
         await interaction.response.send_modal(ScriptModal())
 
 # -----------------------------
-# SLASH COMMANDS
+# Slash Commands
 # -----------------------------
 @bot.tree.command(name="panel", description="Show the Mobile Script Fixer panel")
 async def panel(interaction: discord.Interaction):
+
+    instructions = (
+        "📘 **How to Use the Mobile Script Fixer**\n\n"
+        "1️⃣ Open the panel using **/panel**\n"
+        "2️⃣ Tap **Paste Script**\n"
+        "3️⃣ Paste your Script\n"
+        "4️⃣ Submit it\n"
+        "5️⃣ The bot will DM you the fixed version\n\n"
+        "⚠️ Make sure your DMs are open so the bot can send your script.\n\n"
+    )
+
     embed = discord.Embed(
         title="📱 Mobile Script Fixer",
-        description="Paste your script using the button below.",
+        description=instructions,
         color=0x3498db
     )
 
-    if config["background"]:
-        embed.set_image(url=config["background"])
+    if os.path.exists(BACKGROUND_FILE):
+        file = discord.File(BACKGROUND_FILE, filename="background.png")
+        embed.set_image(url="attachment://background.png")
+        await interaction.response.send_message(
+            embed=embed,
+            view=FixerPanel(),
+            file=file
+        )
+    else:
+        await interaction.response.send_message(
+            embed=embed,
+            view=FixerPanel()
+        )
 
-    await interaction.response.send_message(embed=embed, view=FixerPanel())
+@bot.tree.command(name="setbg", description="Set the background image (Admins only)")
+@app_commands.describe(image="Upload an image file")
+async def setbg(interaction: discord.Interaction, image: discord.Attachment):
 
-@bot.tree.command(name="setbg", description="Set the background image for the panel")
-@app_commands.describe(url="Direct image URL")
-async def setbg(interaction: discord.Interaction, url: str):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ Admins only.", ephemeral=True)
         return
 
-    config["background"] = url
-    save_config(config)
+    if not image.content_type.startswith("image/"):
+        await interaction.response.send_message("❌ File must be an image.", ephemeral=True)
+        return
+
+    await image.save(BACKGROUND_FILE)
 
     await interaction.response.send_message(
-        f"✅ Background updated!\nNew background:\n{url}"
+        "✅ Background updated successfully!"
     )
 
 @bot.tree.command(name="logs", description="View script fixer logs (Admin only)")
 async def logs_cmd(interaction: discord.Interaction):
+
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ Admins only.", ephemeral=True)
         return
@@ -164,7 +172,7 @@ async def logs_cmd(interaction: discord.Interaction):
         return
 
     text = ""
-    for entry in logs[-10:]:  # last 10 logs
+    for entry in logs[-10:]:
         text += f"👤 **{entry['username']}**\n"
         text += f"🔑 Key: `{entry['script_key']}`\n"
         text += f"🌐 URL: `{entry['url']}`\n\n"
@@ -175,7 +183,7 @@ async def logs_cmd(interaction: discord.Interaction):
     )
 
 # -----------------------------
-# SYNC COMMANDS
+# Sync Commands
 # -----------------------------
 @bot.event
 async def on_ready():
